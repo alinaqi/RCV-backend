@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     
     # Perplexity AI Settings
     PERPLEXITY_API_KEY: str
+    PERPLEXITY_MODEL: str = "sonar-pro"
     
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 10

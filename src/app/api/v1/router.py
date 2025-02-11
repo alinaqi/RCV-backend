@@ -5,137 +5,65 @@ from datetime import datetime
 
 from src.app.services.contract_parser import ContractParser, ParsedDocument
 from src.app.services.claude_service import ClaudeService
-from src.app.schemas.contract import ContractAnalysisResponse, ContractAnalysisError, RedlineItem
+from src.app.services.perplexity_service import PerplexityService
+from src.app.services.docx_service import DocxService
+from src.app.schemas.contract import (
+    ContractAnalysisResponse, 
+    ContractAnalysisError, 
+    RedlineItem,
+    ContractAnalysis,
+    ContractLegalContext
+)
 from src.app.core.config import settings
+from src.app.core.dependencies import get_services
 
 logger = logging.getLogger(__name__)
 
 api_router = APIRouter()
 
-@api_router.post("/analyze-contract", response_model=ContractAnalysisResponse)
+@api_router.post("/analyze", response_model=ContractAnalysisResponse)
 async def analyze_contract(
-    description: str,
     file: UploadFile = File(...),
-    contract_type: Optional[str] = None,
     jurisdiction: Optional[str] = None,
-):
+    services: tuple[ClaudeService, PerplexityService, DocxService] = Depends(get_services)
+) -> ContractAnalysisResponse:
     """
-    Analyze a contract document using Claude AI.
-    
-    Args:
-        description: Brief description of the contract's purpose and context
-        file: DOCX file containing the contract
-        contract_type: Type of contract (e.g., service, employment, NDA, etc.)
-        jurisdiction: Country or region where the contract will be enforced
-        
-    Returns:
-        ContractAnalysisResponse: Analysis results or error details
+    Analyze a contract document through a 4-step process:
+    1. Validate the contract and extract text/redlines
+    2. Identify contract topic, jurisdiction, and summary
+    3. Find relevant laws and cases
+    4. Analyze contract using legal context
     """
     try:
-        # Validate file type
-        if not file.filename.endswith('.docx'):
-            raise HTTPException(
-                status_code=400,
-                detail="Only DOCX files are supported"
-            )
-            
-        # Validate file size
-        file_size = 0
-        content = await file.read()
-        file_size = len(content)
-        await file.seek(0)
+        claude_service, perplexity_service, docx_service = services
         
-        if file_size > settings.MAX_FILE_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File size exceeds maximum limit of {settings.MAX_FILE_SIZE // (1024*1024)}MB"
-            )
+        # Step 1: Validate and parse contract
+        logger.info("Step 1: Validating and parsing contract")
+        contract_text, redlines = await docx_service.parse_contract(file)
         
-        # Parse contract
-        contract_parser = ContractParser()
-        parsed_doc: ParsedDocument = await contract_parser.parse_docx(file)
-        sections = contract_parser.extract_sections(parsed_doc.text)
-        
-        # Get tracked changes from document
-        doc_redlines = [
-            RedlineItem(
-                paragraph_number=r.paragraph_number,
-                original_text=r.original_text,
-                modified_text=r.modified_text,
-                author=r.author,
-                date=r.date,
-                change_type=r.change_type
-            ) for r in parsed_doc.redlines
-        ]
-        
-        # Validate if it's a legitimate contract
-        if not await contract_parser.is_valid_contract(parsed_doc.text):
-            return ContractAnalysisResponse(
-                status="error",
-                error={
-                    "error_code": "INVALID_CONTRACT",
-                    "message": "The provided document does not appear to be a valid contract",
-                    "details": {
-                        "reason": "Missing essential contract elements or structure",
-                        "suggestion": "Please ensure the document is a proper legal contract",
-                        "redlines": [r.model_dump() for r in doc_redlines]
-                    },
-                    "timestamp": datetime.utcnow()
-                }
-            )
-        
-        # Analyze with Claude
-        claude_service = ClaudeService()
-        analysis = await claude_service.analyze_contract(
-            contract_text=parsed_doc.text,
-            sections=sections,
-            description=description,
-            contract_type=contract_type,
+        # Step 2 & 3: Get legal context
+        logger.info("Step 2 & 3: Getting legal context")
+        legal_context = await perplexity_service.analyze_contract_context(
+            contract_text=contract_text,
             jurisdiction=jurisdiction
         )
         
-        # Convert Claude's issues into redlines
-        issue_redlines = []
-        for issue in analysis.issues:
-            # Create a redline for each identified issue
-            issue_redlines.append(
-                RedlineItem(
-                    paragraph_number=issue.location.paragraph,
-                    original_text=issue.location.text,
-                    modified_text=issue.suggestion,
-                    author="Claude AI",
-                    date=datetime.utcnow().isoformat(),
-                    change_type="modification"
-                )
-            )
-            
-        # Combine document tracked changes and AI-suggested changes
-        all_redlines = doc_redlines + issue_redlines
-        
-        # Sort redlines by paragraph number for better organization
-        all_redlines.sort(key=lambda x: x.paragraph_number)
-        
-        # Update analysis with combined redlines
-        analysis.redlines = all_redlines
-        
-        return ContractAnalysisResponse(
-            status="success",
-            analysis=analysis
+        # Step 4: Analyze contract with context
+        logger.info("Step 4: Analyzing contract with legal context")
+        analysis = await claude_service.analyze_contract(
+            contract_text=contract_text,
+            legal_context=legal_context
         )
         
-    except HTTPException as e:
-        # Re-raise HTTP exceptions
-        raise
+        return ContractAnalysisResponse(
+            analysis=analysis,
+            legal_context=legal_context,
+            redlines=redlines
+        )
         
     except Exception as e:
-        logger.error(f"Error processing contract: {str(e)}", exc_info=True)
-        error = ContractAnalysisError(
-            error_code="PROCESSING_ERROR",
-            message="Failed to process contract",
-            details={"error": str(e)},
-            timestamp=datetime.utcnow()
-        )
-        return ContractAnalysisResponse(
-            status="error",
-            error=error.model_dump()
+        logger.error(f"Error analyzing contract: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error analyzing contract: {str(e)}"
         )

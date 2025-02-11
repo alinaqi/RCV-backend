@@ -1,125 +1,50 @@
-from typing import Dict, Any, Optional
-import anthropic
-from datetime import datetime
-import json
+from typing import List, Optional
+from openai import OpenAI
 import logging
 
 from src.app.core.config import settings
-from src.app.schemas.contract import ContractAnalysis
+from src.app.schemas.contract import ContractAnalysis, Issue, Location
+from src.app.schemas.legal_context import ContractLegalContext
 
 logger = logging.getLogger(__name__)
 
 class ClaudeService:
-    """Service for analyzing contracts using Claude AI."""
+    """Service for contract analysis using Claude AI."""
     
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        self.model = settings.CLAUDE_MODEL
-    
-    def _build_analysis_prompt(
-        self,
-        contract_text: str,
-        sections: Dict[str, str],
-        description: str,
-        contract_type: Optional[str] = None,
-        jurisdiction: Optional[str] = None
-    ) -> str:
-        """Build the prompt for contract analysis."""
-        context_parts = [f"Contract Description: {description}"]
-        if contract_type:
-            context_parts.append(f"Contract Type: {contract_type}")
-        if jurisdiction:
-            context_parts.append(f"Jurisdiction: {jurisdiction}")
+        self.client = OpenAI(api_key=settings.ANTHROPIC_API_KEY)
         
-        context = "\n".join(context_parts)
-        
-        jurisdiction_note = " (especially considering the specified jurisdiction)" if jurisdiction else ""
-        improvement_note = " considering the jurisdiction's legal requirements" if jurisdiction else ""
-        
-        return f"""You are a legal contract analyzer. You will analyze the following contract based on this context:
-
-{context}
-
-Analyze the contract with these instructions:
-
-1. Identify and assess key clauses:
-   - Liability provisions
-   - Payment terms
-   - Notice periods
-   - Termination conditions
-   - Jurisdiction and governing law{jurisdiction_note}
-
-2. For each identified issue:
-   - Specify the type of issue
-   - Assess severity (Critical/High/Medium/Low/Info)
-   - Provide specific location in the text (using [P1], [P2], etc. references)
-   - Explain the potential risk
-   - Suggest improvements{improvement_note}
-
-Contract text:
-{contract_text}
-
-Provide analysis in JSON format matching this structure:
-{{
-    "issues": [
-        {{
-            "type": "string",
-            "severity": "critical|high|medium|low|info",
-            "description": "string",
-            "location": {{
-                "paragraph": number,
-                "text": "string"
-            }},
-            "suggestion": "string"
-        }}
-    ],
-    "suggestions": [
-        {{
-            "category": "string",
-            "description": "string",
-            "current": "string",
-            "suggested": "string"
-        }}
-    ],
-    "risk_score": number (0-100)
-}}"""
-
     async def analyze_contract(
         self,
         contract_text: str,
-        sections: Dict[str, str],
-        description: str,
-        contract_type: Optional[str] = None,
-        jurisdiction: Optional[str] = None
+        legal_context: ContractLegalContext
     ) -> ContractAnalysis:
         """
-        Analyze contract using Claude AI.
+        Analyze a contract using Claude AI with legal context.
         
         Args:
-            contract_text (str): The parsed contract text
-            sections (Dict[str, str]): Extracted contract sections
-            description (str): Brief description of the contract's purpose
-            contract_type (Optional[str]): Type of contract (e.g., service, employment)
-            jurisdiction (Optional[str]): Country or region where the contract will be enforced
+            contract_text (str): The contract text to analyze
+            legal_context (ContractLegalContext): Legal context including laws and cases
             
         Returns:
-            ContractAnalysis: The analysis results
+            ContractAnalysis: Analysis results including issues and suggestions
         """
         try:
-            prompt = self._build_analysis_prompt(
-                contract_text=contract_text,
-                sections=sections,
-                description=description,
-                contract_type=contract_type,
-                jurisdiction=jurisdiction
-            )
+            # Build prompt with legal context
+            prompt = self._build_analysis_prompt(contract_text, legal_context)
             
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=settings.MAX_TOKENS,
-                temperature=settings.TEMPERATURE,
-                system="You are an expert legal contract analyzer. Provide analysis in the exact JSON format requested.",
+            # Get analysis from Claude
+            response = self.client.chat.completions.create(
+                model=settings.CLAUDE_MODEL,
                 messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a legal expert analyzing contracts. "
+                            "Provide detailed analysis including issues, suggestions, and risk assessment. "
+                            "Format your response as JSON with keys: issues (list), suggestions (list), risk_assessment (str)"
+                        )
+                    },
                     {
                         "role": "user",
                         "content": prompt
@@ -127,16 +52,76 @@ Provide analysis in JSON format matching this structure:
                 ]
             )
             
-            # Parse Claude's response
-            response_text = message.content[0].text
-            analysis_dict = json.loads(response_text)
+            # Parse response
+            analysis_data = eval(response.choices[0].message.content)
             
-            # Add timestamp and initialize empty redlines list
-            analysis_dict["analysis_timestamp"] = datetime.utcnow()
-            analysis_dict["redlines"] = []  # Initialize empty redlines list
+            # Convert issues to proper format
+            issues = []
+            for issue_data in analysis_data['issues']:
+                issues.append(Issue(
+                    location=Location(
+                        paragraph=issue_data['location']['paragraph'],
+                        text=issue_data['location']['text']
+                    ),
+                    description=issue_data['description'],
+                    severity=issue_data['severity'],
+                    suggestion=issue_data['suggestion']
+                ))
             
-            return ContractAnalysis(**analysis_dict)
+            return ContractAnalysis(
+                issues=issues,
+                suggestions=analysis_data['suggestions'],
+                risk_assessment=analysis_data['risk_assessment'],
+                legal_context=legal_context
+            )
             
         except Exception as e:
             logger.error(f"Error analyzing contract with Claude: {str(e)}", exc_info=True)
-            raise 
+            raise
+            
+    def _build_analysis_prompt(self, contract_text: str, legal_context: ContractLegalContext) -> str:
+        """Build the analysis prompt including legal context."""
+        prompt = f"""
+        Contract Text:
+        {contract_text}
+        
+        Contract Topic: {legal_context.topic}
+        Jurisdiction: {legal_context.jurisdiction}
+        Summary: {legal_context.summary}
+        
+        Relevant Laws:
+        """
+        
+        for law in legal_context.laws:
+            prompt += f"""
+            - {law.title}
+              Description: {law.description}
+              Relevance: {law.relevance}
+              Source: {law.source}
+            """
+            
+        prompt += "\nRelevant Cases:"
+        
+        for case in legal_context.cases:
+            prompt += f"""
+            - {case.title}
+              Description: {case.description}
+              Relevance: {case.relevance}
+              Source: {case.source}
+            """
+            
+        prompt += """
+        Please analyze this contract considering the legal context provided. Focus on:
+        1. Identifying potential issues and risks
+        2. Suggesting improvements
+        3. Assessing overall risk level
+        4. Ensuring compliance with relevant laws
+        5. Considering precedents from case law
+        
+        Format your response as JSON with:
+        - issues: list of {location: {paragraph, text}, description, severity, suggestion}
+        - suggestions: list of improvement suggestions
+        - risk_assessment: overall risk assessment
+        """
+        
+        return prompt 

@@ -2,17 +2,20 @@ from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Dict, Any
 from datetime import datetime
 
+from src.app.schemas.legal_context import ContractLegalContext
+
 
 class Location(BaseModel):
+    """Location of an issue in the contract."""
     paragraph: int
     text: str
 
 
 class Issue(BaseModel):
-    type: str
-    severity: Literal["critical", "high", "medium", "low", "info"]
-    description: str
+    """Contract issue with location and suggestion."""
     location: Location
+    description: str
+    severity: str  # 'high', 'medium', 'low'
     suggestion: str
 
 
@@ -24,26 +27,36 @@ class Suggestion(BaseModel):
 
 
 class RedlineItem(BaseModel):
+    """A single redline/tracked change in the contract."""
     paragraph_number: int
     original_text: str
     modified_text: str
     author: str
     date: str
-    change_type: Literal["insertion", "deletion", "modification"]
+    change_type: str  # 'insertion', 'deletion', 'modification'
+
+
+class LegalReference(BaseModel):
+    title: str
+    description: str
+    relevance: str
+    source: str
+    reference_type: Literal["law", "case"]
 
 
 class ContractAnalysis(BaseModel):
+    """Results of contract analysis."""
     issues: List[Issue]
-    suggestions: List[Suggestion]
-    risk_score: int = Field(ge=0, le=100)
-    analysis_timestamp: datetime
-    redlines: List[RedlineItem]
+    suggestions: List[str]
+    risk_assessment: str
+    legal_context: ContractLegalContext
 
 
 class ContractAnalysisResponse(BaseModel):
-    status: Literal["success", "error"]
-    analysis: Optional[ContractAnalysis] = None
-    error: Optional[Dict[str, Any]] = None
+    """API response for contract analysis."""
+    analysis: ContractAnalysis
+    legal_context: ContractLegalContext
+    redlines: List[RedlineItem]
 
 
 class ContractAnalysisError(BaseModel):

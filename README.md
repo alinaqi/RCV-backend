@@ -191,8 +191,4 @@ pytest
 
 ## License
 
-[Your License Here]
-
-## Support
-
-[Your Support Information] 
+No Support or license as this is just a midnight hackathon!:)
