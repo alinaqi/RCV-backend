@@ -1,0 +1,13 @@
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+python-docx>=0.8.11
+anthropic>=0.5.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-jose[cryptography]>=3.3.0
+python-dotenv>=1.0.0
+aiofiles>=23.1.0
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+httpx>=0.24.1 
