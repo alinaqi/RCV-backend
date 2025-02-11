@@ -1,34 +1,142 @@
 # Contract Validator API
 
-An advanced FastAPI-based backend service that analyzes legal contracts using Claude AI to identify potential issues, risks, and suggest improvements. The service includes intelligent contract validation, section analysis, and redline tracking capabilities.
+An advanced FastAPI-based backend service that analyzes legal contracts using AI to identify potential issues, risks, and suggest improvements. The service combines Claude AI and Perplexity AI for comprehensive contract analysis and legal research.
 
 ## Features
 
-### Contract Analysis
-- **AI-Powered Analysis**: Uses Claude AI for deep contract analysis
-- **Risk Assessment**: Provides detailed risk scoring and analysis
-- **Issue Detection**: Identifies potential legal and compliance issues
-- **Smart Suggestions**: Offers context-aware improvement recommendations
-- **Jurisdiction Awareness**: Considers local legal requirements when specified
+### Multi-Stage Contract Analysis
+1. **Document Processing**
+   - DOCX file parsing and validation
+   - Extraction of contract text and structure
+   - Tracking of document redlines and changes
+   - Support for tracked changes and modifications
+
+2. **Legal Context Analysis (Perplexity AI)**
+   - Automatic topic and jurisdiction detection
+   - Identification of relevant laws and regulations
+   - Finding applicable case law and precedents
+   - Legal context summarization
+   - Real-time legal research capabilities
+
+3. **Contract Analysis (Claude AI)**
+   - Deep semantic analysis of contract terms
+   - Issue identification and risk assessment
+   - Compliance verification with relevant laws
+   - Improvement suggestions
+   - Risk scoring and evaluation
+
+4. **Comprehensive Reporting**
+   - Detailed issue descriptions with locations
+   - Severity-based categorization
+   - Specific improvement suggestions
+   - Overall risk assessment
+   - Legal context integration
+
+### Analysis Components
+
+#### Legal Context Analysis
+- **Topic Detection**: Automatically identifies contract type and subject matter
+- **Jurisdiction Analysis**: Determines applicable legal framework
+- **Legal Research**: 
+  - Relevant laws and regulations
+  - Applicable case law
+  - Legal precedents
+  - Regulatory requirements
+
+#### Contract Analysis
+- **Issue Detection**:
+  - Legal compliance issues
+  - Risk factors
+  - Ambiguous terms
+  - Missing clauses
+  - Potential conflicts
+- **Risk Assessment**:
+  - Severity classification
+  - Impact analysis
+  - Compliance evaluation
+  - Risk scoring
+
+#### Improvement Suggestions
+- Clause-specific recommendations
+- Alternative wording proposals
+- Best practice alignments
+- Compliance improvements
+- Risk mitigation strategies
 
 ### Redline Management
-- **Dual Redline Tracking**:
-  - Document Tracked Changes: Captures existing redlines in the document
-  - AI-Suggested Changes: Highlights problematic sections with suggested improvements
-- **Change Attribution**: Tracks authors and timestamps for all changes
-- **Sorted Organization**: Presents changes in paragraph order for easy navigation
+- **Document Tracked Changes**:
+  - Captures existing redlines
+  - Author attribution
+  - Timestamp tracking
+  - Change type classification
+- **AI-Suggested Changes**:
+  - Improvement markers
+  - Risk highlights
+  - Compliance suggestions
 
-### Contract Validation
-- **Intelligent Validation**: Uses AI to determine document legitimacy
-- **Section Analysis**: Identifies and extracts key contract sections
-- **Fallback Validation**: Includes basic validation as a backup
+## API Endpoints
 
-### Key Contract Sections Analyzed
-- Liability Provisions
-- Payment Terms
-- Notice Periods
-- Termination Conditions
-- Jurisdiction and Governing Law
+### Contract Analysis
+`POST /api/v1/analyze-contract`
+
+Analyzes a contract document through the multi-stage process.
+
+**Request:**
+```http
+POST /api/v1/analyze-contract
+Content-Type: multipart/form-data
+
+Parameters:
+- file: DOCX file (required)
+- description: Brief description of contract purpose (required)
+- contract_type: Type of contract (optional)
+- jurisdiction: Country/region for legal context (optional)
+```
+
+**Response:**
+```json
+{
+    "status": "success",
+    "analysis": {
+        "issues": [
+            {
+                "location": {
+                    "paragraph": 1,
+                    "text": "string"
+                },
+                "description": "string",
+                "severity": "high|medium|low",
+                "suggestion": "string"
+            }
+        ],
+        "suggestions": [
+            "string"
+        ],
+        "risk_assessment": "string",
+        "legal_context": {
+            "topic": "string",
+            "jurisdiction": "string",
+            "summary": "string",
+            "laws": [
+                {
+                    "title": "string",
+                    "description": "string",
+                    "relevance": "string",
+                    "source": "string"
+                }
+            ],
+            "cases": [
+                {
+                    "title": "string",
+                    "description": "string",
+                    "relevance": "string",
+                    "source": "string"
+                }
+            ]
+        }
+    }
+}
+```
 
 ## Setup
 
@@ -36,6 +144,7 @@ An advanced FastAPI-based backend service that analyzes legal contracts using Cl
 - Python 3.11+
 - Virtual Environment (recommended)
 - Anthropic API Key (for Claude AI)
+- Perplexity API Key (for legal research)
 
 ### Installation
 
@@ -59,6 +168,7 @@ pip install -r requirements.txt
 4. Create `.env` file:
 ```env
 ANTHROPIC_API_KEY=your_api_key_here
+PERPLEXITY_API_KEY=your_perplexity_api_key_here
 DEBUG=True
 MAX_FILE_SIZE=10485760
 RATE_LIMIT_PER_MINUTE=10
@@ -75,63 +185,18 @@ REQUEST_TIMEOUT=90
 uvicorn src.app.main:app --reload --host 0.0.0.0 --port 8010
 ```
 
-### API Endpoints
-
-#### Contract Analysis
-`POST /api/v1/analyze-contract`
-
-Analyzes a contract document and provides comprehensive analysis with redlines.
-
-**Request:**
-- Content-Type: `multipart/form-data`
-- Parameters:
-  - `file`: DOCX file (required)
-  - `description`: Brief description of contract purpose (required)
-  - `contract_type`: Type of contract (optional)
-  - `jurisdiction`: Country/region for legal context (optional)
-
-**Response:**
-```json
-{
-    "status": "success",
-    "analysis": {
-        "issues": [
-            {
-                "type": "string",
-                "severity": "critical|high|medium|low|info",
-                "description": "string",
-                "location": {
-                    "paragraph": number,
-                    "text": "string"
-                },
-                "suggestion": "string"
-            }
-        ],
-        "suggestions": [
-            {
-                "category": "string",
-                "description": "string",
-                "current": "string",
-                "suggested": "string"
-            }
-        ],
-        "risk_score": number,
-        "analysis_timestamp": "datetime",
-        "redlines": [
-            {
-                "paragraph_number": number,
-                "original_text": "string",
-                "modified_text": "string",
-                "author": "string",
-                "date": "string",
-                "change_type": "insertion|deletion|modification"
-            }
-        ]
-    }
-}
+### Example Usage with cURL
+```bash
+curl -X POST "http://localhost:8010/api/v1/analyze-contract" \
+  -H "accept: application/json" \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@contract.docx" \
+  -F "description=Employment contract for senior software developer" \
+  -F "contract_type=employment" \
+  -F "jurisdiction=Germany"
 ```
 
-### Error Handling
+## Error Handling
 
 The API uses standard HTTP status codes and returns detailed error messages:
 
@@ -141,7 +206,6 @@ The API uses standard HTTP status codes and returns detailed error messages:
 - 500: Internal Server Error
 
 ### Rate Limiting
-
 - Maximum 10 requests per minute per IP
 - Maximum file size: 10MB
 - Only DOCX files are supported
@@ -161,7 +225,8 @@ src/
 │   │   └── contract.py
 │   ├── services/
 │   │   ├── claude_service.py
-│   │   └── contract_parser.py
+│   │   ├── perplexity_service.py
+│   │   └── docx_service.py
 │   └── main.py
 ├── tests/
 │   ├── integration/
